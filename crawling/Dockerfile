@@ -5,7 +5,7 @@ FROM public.ecr.aws/lambda/python as base
 WORKDIR /var/task
 
 COPY .env ./
-COPY remote ./remote
+COPY remote/ ./remote
 
 # install dependencies
 COPY crawling/requirements.txt  ./

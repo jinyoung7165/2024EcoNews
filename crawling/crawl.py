@@ -7,8 +7,7 @@ from bs4 import BeautifulSoup
 import requests
 import re
 
-from s3_method import S3
-
+from remote.s3_method import S3
 from dotenv import load_dotenv
 
 import sys, os
@@ -27,7 +26,7 @@ now_date = str(date.date())
 def current_page_items(pageIdx, return_list): #전체페이지에서 각 기사의 링크, 메타데이터 저장해둠
     try:
         page_url = "https://news.naver.com/main/list.nhn?mode=LSD&mid=sec&sid1=101&date={}&page={}".format(today, pageIdx)
-        all_list = requests.get(page_url, headers={'User-Agent': 'Mozilla/5.0'})
+        all_list = requests.get(page_url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'})
         all_html = BeautifulSoup(all_list.text, 'html.parser')
         time.sleep(1.5)
         
@@ -139,10 +138,11 @@ def convert_csv(return_list):
 def crawl():
     s3 = S3() #s3 connection 1번
     
+    start = time.time()
     print(today, "오늘의 crawl 시작")
     return_list = Manager().list()
 
-    for i in range(1, 51):
+    for i in range(1, 51): # 50페이지 * 20건씩 가져오기
         current_page_items(i, return_list)
     
     # 각 기사에서 url 통해 본문 가져오기
@@ -157,9 +157,8 @@ def crawl():
 
     convert_csv(list(return_list))
     s3.s3_upload_file(now_date, "naver_news.csv")
+    print(time.time() - start)
     return today
     
 if __name__ == '__main__':
-    start = time.time()
     target = crawl()
-    print(time.time() - start)
