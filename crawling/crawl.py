@@ -6,8 +6,8 @@ from multiprocessing import Manager
 from bs4 import BeautifulSoup
 import requests
 import re
+from remote.psql_method import PostgresDB
 
-from remote.s3_method import S3
 from dotenv import load_dotenv
 
 import sys, os
@@ -68,7 +68,7 @@ def get_news_content_thread(idx, return_list, size): # 각 기사에서 뉴스 �
             
 def get_news_content(idx, return_list):
     try:
-        news = requests.get(return_list[idx][0], headers={'User-Agent': 'Mozilla/5.0'})
+        news = requests.get(return_list[idx][0], headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'})
         news_html = BeautifulSoup(news.text, "html.parser")
         time.sleep(1.5)
        
@@ -133,11 +133,22 @@ def get_news_content(idx, return_list):
 def convert_csv(return_list):
     result = pd.DataFrame(return_list, columns = label)
     result.to_csv(filename, encoding="utf-8-sig")
-    
 
-def crawl():
-    s3 = S3() #s3 connection 1번
+def save_in_postgres(postgresDb, return_list):
+    cursor = postgresDb.cursor
+    insert_query = """
+        INSERT INTO doc (link, press, image, title, date, main, keydate)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """
     
+    for i in range(len(return_list)):
+        doc = return_list[i]
+        cursor.execute(insert_query, (doc[0], doc[1], doc[2], doc[3], doc[4], doc[5], today))
+
+    postgresDb.db.commit() # 변경사항을 커밋
+    cursor.close()
+    
+def crawl():
     start = time.time()
     print(today, "오늘의 crawl 시작")
     return_list = Manager().list()
@@ -155,8 +166,11 @@ def crawl():
     for th in threads:
         th.join()
 
+    postgresDb = PostgresDB()
     convert_csv(list(return_list))
-    s3.s3_upload_file(now_date, "naver_news.csv")
+    save_in_postgres(postgresDb, return_list)
+    postgresDb.db.close()  # 연결 종료
+
     print(time.time() - start)
     return today
     
