@@ -43,20 +43,20 @@ class DocTfidf(ArrUtil): #전체 문서 기준
             doc_words = set(words) #해당 문서의 단어 집합
             for word in doc_words: #해당 문서의 단어
                 sim_sum = 0 #해당 word에 대한 유사도 합
-                for key in self.word_list: #전체 단어 set
-                    if word == key: continue
-                    try:
-                        sim_sum += self.model.wv.similarity(word, key)
-                    except KeyError: continue
-                    # word가 self.word_list에 있는지 확인
-                    if word in self.word_list:
-                        arr[idx][self.word_list.index(word)] = sim_sum / len(doc_words)
+                if word in self.word_list: #해당 문서의 단어가 사전에 존재할 때
+                    for key in self.word_list: #전체 단어 set
+                        if word == key: continue
+                        try:
+                            sim_sum += self.model.wv.similarity(word, key)
+                        except KeyError: continue
+
+                    arr[idx][self.word_list.index(word)] = sim_sum / len(doc_words)
                     
         return self.nparr_to_dataframe(arr, self.len_doc, self.len_word)
     
     
     def hot_topic(self):
         all_words = list(reduce(lambda x,y: x+y, self.doc_word_dict.values()))
-        result2=  Counter(list(word for word in all_words)).most_common(40)
+        result2=  Counter(list(word for word in all_words if word in self.word_list)).most_common(40)
         
         return result2

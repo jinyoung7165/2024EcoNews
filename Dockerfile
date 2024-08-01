@@ -1,4 +1,4 @@
-FROM python:3
+FROM python:3.9
 
 # apt init
 ENV LANG=C.UTF-8
@@ -24,8 +24,8 @@ VOLUME /tmp
 RUN mkdir -p /workspace
 WORKDIR /workspace
 
-# install konlpy dependencies: jpype, konlpy, with mecab module
-RUN pip install jpype1-py3 konlpy
+# install konlpy dependencies: jpype1, konlpy, with mecab module
+RUN pip install jpype1 konlpy
 RUN cd /workspace && \
     curl -s https://raw.githubusercontent.com/konlpy/konlpy/master/scripts/mecab.sh | bash -s
 

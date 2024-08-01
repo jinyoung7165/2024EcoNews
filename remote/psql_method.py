@@ -65,11 +65,10 @@ class RunDB:
             self.insert_each_doc_keyword(doc)
         print("each document keyword insertion complete!")
         
-    def convert_list_to_pg_array(self, lst):
-        # 리스트의 요소를 정수로 변환 후 문자열로 변환하고, 중괄호로 감싸기
-        pg_array_string = '{' + ','.join(map(str, map(int, lst))) + '}'
-        return pg_array_string
-
+    @staticmethod
+    def convert_list_to_semi_colon_string(lst):
+        return ';'.join(map(str, lst))
+    
     def insert_hot_topics(self, hots):
         cursor = self.db.cursor
         '''
@@ -77,7 +76,7 @@ class RunDB:
         '''
         for hot in hots:
             cursor.execute("INSERT INTO hot (word, weight, keydate, doc_ids) VALUES (%s, %s, %s, %s)",
-                        (hot['word'], hot['weight'], self.db.today, self.convert_list_to_pg_array(hot['doc'])))
+                        (hot['word'], hot['weight'], self.db.today, self.convert_list_to_semi_colon_string(hot['doc'])))
         self.db.db.commit()
 
     def hottopic_documents(self, word): #해당 단어의 결합 벡터가 0.1이상인 문서를 db에 저장
@@ -137,7 +136,10 @@ class RunDB:
                 "keyword": [temp[0][0]]
             }
         
-        cursor.execute("UPDATE doc SET keyword = %s WHERE id = %s", (docu['keyword'], id,))
+        # 리스트를 세미콜론으로 구분된 문자열로 변환
+        keyword_string = self.convert_list_to_semi_colon_string(docu['keyword'])
+        
+        cursor.execute("UPDATE doc SET keyword = %s WHERE id = %s", (keyword_string, id,))
         self.db.db.commit()
         
         cursor.execute("SELECT main FROM doc WHERE id = %s", (id,))
