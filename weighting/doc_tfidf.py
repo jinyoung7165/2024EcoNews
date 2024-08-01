@@ -22,6 +22,7 @@ class DocTfidf(ArrUtil): #전체 문서 기준
         sum_df.index = my_rows
         
         return sum_df
+    
     def statistical_similarity(self):
         tfidf_target_word = [] #각 문서의 모든 word로 이뤄진 문장 배열
         # 1차원 배열로 만들기(tf-idf를 위해서)
@@ -38,7 +39,6 @@ class DocTfidf(ArrUtil): #전체 문서 기준
         
     def semantic_similarity(self):
         arr = [[0]*self.len_word for _ in range(self.len_doc)] #tfidf랑 결합할 의미 벡터
-        
         for idx, words in enumerate(self.doc_word_dict.values()): #문서 순회
             doc_words = set(words) #해당 문서의 단어 집합
             for word in doc_words: #해당 문서의 단어
@@ -48,8 +48,9 @@ class DocTfidf(ArrUtil): #전체 문서 기준
                     try:
                         sim_sum += self.model.wv.similarity(word, key)
                     except KeyError: continue
-
-                    arr[idx][self.word_list.index(word)] = sim_sum / len(doc_words)
+                    # word가 self.word_list에 있는지 확인
+                    if word in self.word_list:
+                        arr[idx][self.word_list.index(word)] = sim_sum / len(doc_words)
                     
         return self.nparr_to_dataframe(arr, self.len_doc, self.len_word)
     

@@ -1,23 +1,26 @@
 import requests, json, os
-from bson import ObjectId
 from preprocess.tokenizer import SummaryStopword
+from remote.psql_method import PostgresDB
 
 class Summary:
-    def __init__(self, db, hot_topic, doc_main_arr):
+    def __init__(self, db:PostgresDB, hot_topic, doc_main_arr):
         self.hot_topic = hot_topic
         self.doc_main_arr = doc_main_arr # 요약할 기사들의 본문(사전)
-        self.db = db #newsnack db
+        self.db = db # db
         self.stopword = SummaryStopword().stopwords
 
     def setting(self): 
+        cursor = self.db.cursor
         for key, value in self.doc_main_arr.items():
-            date, id = key.split('/') #collection 날짜, _id
-            doc_c = self.db[date] # 해당 hot topic 문서를 가진 doc collection
-            if (doc_c.find_one({"_id": ObjectId(id), 'summary': {'$exists': True}})): continue #이미 summary가 존재하는 doc이면 continue
+            keydate, id = key.split('/') # 날짜, id
+            
+            cursor.execute("SELECT * FROM doc WHERE id = %s AND summary IS NOT NULL", (id,))
+            if cursor.fetchone(): continue #이미 summary가 존재하는 doc이면 continue
             docu = {
                 'summary': self.summarize_text(self.preprocess(value))
             }
-            doc_c.update_one({"_id": ObjectId(id)}, { "$set" : docu })
+            cursor.execute("UPDATE doc SET summary = %s WHERE id = %s", (docu['summary'], id,))
+            self.db.db.commit()
         print("summary update complete!")
 
     # 해당 줄에 stopword 포함 시 제거

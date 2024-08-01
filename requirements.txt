@@ -1,7 +1,7 @@
 pandas
 boto3
 python-dotenv
-pymongo
+psycopg2
 requests
 gensim
 scikit-learn

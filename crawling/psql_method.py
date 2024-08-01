@@ -3,7 +3,7 @@ import datetime, os, re
 
 class PostgresDB:
     def __init__(self, db=None):
-        self.today = str(datetime.datetime.now().date())
+        self.today = datetime.datetime.now().strftime("%Y%m%d")
         if db is None: #crawler에서 호출
             self.db = psycopg2.connect(
             dbname = os.environ.get('postgres_db'),
@@ -19,42 +19,26 @@ class PostgresDB:
         print("PostgreSQL connection complete!")
 
     def __del__(self):
-        self.db.close()
         self.cursor.close()
+        self.db.close()
         
-    def execute(self, query, args={}):
-        self.cursor.execute(query, args)
-        row = self.cursor.fetchall()
-        return row
     
-    def commit(self):
-        self.cursor.commit()
-        
-    def insertDB(self,schema,table,colum,data):
-        sql = " INSERT INTO {schema}.{table}({colum}) VALUES ('{data}') ;".format(schema=schema,table=table,colum=colum,data=data)
-        try:
-            self.cursor.execute(sql)
-            self.db.commit()
-        except Exception as e :
-            print(" insert DB  ",e)
-           
-    def get_all_docs(self, date): # doc의 해당 날짜에 대한 모든 문서 [[id, main, title], [id, main, title]]
-        self.cursor.execute("SELECT id, main, title FROM docs WHERE date = %s", (date,))
+    def get_all_docs(self, keydate): # doc의 해당 날짜에 대한 모든 문서 [[id, main, title], [id, main, title]]
+        self.cursor.execute("SELECT id, main, title FROM doc WHERE keydate = %s", (keydate,))
         date_docs = self.cursor.fetchall()
         date_docs_list = []
         for doc in date_docs:
             id = str(doc[0])  # id
-            main = re.sub('[^A-Z a-z 0-9 가-힣 .]', '', doc[1])
-            title = re.sub('[^A-Z a-z 0-9 가-힣 .]', '', doc[2])
+            main = re.sub('[^A-Z a-z 0-9 가-힣 .]', '', doc[1]) # main
+            title = re.sub('[^A-Z a-z 0-9 가-힣 .]', '', doc[2]) # title
             main += "." + title + "." + title + "." + title #제목 가중치 3배
             date_docs_list.append([id, main])
-            
+        self.db.commit()
         return date_docs_list
 
 class RunDB:
     def __init__(self, db: PostgresDB, join_vector, hot_topic):
         self.db = db
-        self.hot_c = db.cursor  # 핫 토픽 테이블
         self.join_vector = join_vector
         self.hot_topic = hot_topic
 
@@ -70,23 +54,33 @@ class RunDB:
         hots = []
         for word in self.joinv_words:
             if word in self.hot_topic_words:
-                hots.append(self.hottopic_document(word))
+                hots.append(self.hottopic_documents(word))
                 
-        # hot tb 안에 document 넣는다.
-        self.hot_c.insert_hot_topics(hots)
+        # hot tb 안에 documents 넣는다.
+        self.insert_hot_topics(hots)
         print("hot topic insertion complete!")
 
+        # 각 doc에 keyword 삽입
         for doc in self.joinv_doc_name:
             self.insert_each_doc_keyword(doc)
         print("each document keyword insertion complete!")
+        
+    def convert_list_to_pg_array(self, lst):
+        # 리스트의 요소를 정수로 변환 후 문자열로 변환하고, 중괄호로 감싸기
+        pg_array_string = '{' + ','.join(map(str, map(int, lst))) + '}'
+        return pg_array_string
 
     def insert_hot_topics(self, hots):
+        cursor = self.db.cursor
+        '''
+        hots = [{'word': '건설', 'weight': 0.029048656499636893, 'doc': ['2904', '2857']...
+        '''
         for hot in hots:
-            self.hot_c.execute("INSERT INTO hot_topics (word, weight, date, doc) VALUES (%s, %s, %s, %s)",
-                        (hot['word'], hot['weight'], self.db.today, str(hot['doc'])))
-        self.db.conn.commit()
+            cursor.execute("INSERT INTO hot (word, weight, keydate, doc_ids) VALUES (%s, %s, %s, %s)",
+                        (hot['word'], hot['weight'], self.db.today, self.convert_list_to_pg_array(hot['doc'])))
+        self.db.db.commit()
 
-    def hottopic_document(self, word): #해당 단어의 결합 벡터가 0.1이상인 문서를 db에 저장
+    def hottopic_documents(self, word): #해당 단어의 결합 벡터가 0.1이상인 문서를 db에 저장
         idx = self.hot_topic_words.index(word)
         weight = self.hot_topic[idx][1] / self.total_weight # 전체 단어 빈도 수에 비한 현재 word의 빈도 수 -> wordcloud
 
@@ -102,22 +96,25 @@ class RunDB:
         hot = {
             "word" : word,
             "weight" : weight,
-            "doc" : [{"ref": t[0].split("/")[0], "_id": t[0].split("/")[1]} for t in temp] # 날짜_doc, _id
+            "doc" : [t[0].split("/")[1] for t in temp] # 날짜 0 / id 1
         }
-        
         return hot
 
     def insert_each_doc_keyword(self, doc):
         # 핫 토픽 단어를 가진 document만 "2023-02-02_doc/0"형태로 collection으로 저장 
         for word in self.hot_topic_words:
-            if self.join_vector.loc[doc, word] > 0.0:
-                self.insert_keyword(doc)
-                break
-
+            if word in self.join_vector.columns:
+                if self.join_vector.loc[doc, word] > 0.0:
+                    self.insert_keyword(doc)
+                    break
+            else:
+                print(f"Warning: '{word}' not found in join_vector columns.")
+                
     def insert_keyword(self, doc): # 해당 문서에 존재하는 단어들 중 keyword 추출        
-        date, id = doc.split('/') #collection, _id
-        self.db.cursor.execute("SELECT * FROM docs WHERE date = %s AND id = %s AND keyword IS NOT NULL", (date, id))
-        if self.db.cursor.fetchone(): return  # 이미 keyword가 존재하는 doc이면 return
+        keydate, id = doc.split('/') #collection, _id
+        cursor = self.db.cursor
+        cursor.execute("SELECT * FROM doc WHERE id = %s AND keyword IS NOT NULL", (id,))
+        if cursor.fetchone(): return  # 이미 keyword가 존재하는 doc이면 return
         
         word_joinv = dict() # 해당 문서에 존재하는 단어-결합벡터 저장
         len_word_in_df = len(self.joinv_words) # df에 있는 전체 단어 수
@@ -140,10 +137,11 @@ class RunDB:
                 "keyword": [temp[0][0]]
             }
         
-        self.db.cursor.execute("UPDATE docs SET keyword = %s WHERE date = %s AND id = %s", (docu['keyword'], date, id))
-        self.db.conn.commit()
+        cursor.execute("UPDATE doc SET keyword = %s WHERE id = %s", (docu['keyword'], id,))
+        self.db.db.commit()
         
-        self.db.cursor.execute("SELECT main FROM docs WHERE date = %s AND id = %s", (date, id))
-        main_mongo = self.db.cursor.fetchone()
-        main = re.sub('[^A-Z a-z 0-9 가-힣 · % .]', '', main_mongo[0])
+        cursor.execute("SELECT main FROM doc WHERE id = %s", (id,))
+        main_f = cursor.fetchone()
+        
+        main = re.sub('[^A-Z a-z 0-9 가-힣 · % .]', '', main_f[0])
         self.doc_dict[doc] = main  # {'2023-02-20/_id' : '본문'} 형식으로 저장해서 summary에게 넘겨줌

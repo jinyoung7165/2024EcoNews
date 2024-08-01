@@ -8,16 +8,16 @@ import sys, os
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from weighting.arr_util import ArrUtil
 from preprocess.tokenizer import Tokenizer
-from remote.mongo_method import MongoDB
+from remote.psql_method import PostgresDB
 
 @lru_cache(maxsize=3)
 class Sentence(ArrUtil):
-    def __init__(self, mongodb: MongoDB, tokenizer: Tokenizer, model, date):
+    def __init__(self, postgresDb: PostgresDB, tokenizer: Tokenizer, model, date):
         self.tokenizer = tokenizer
         self.model = model
         self.date = date
     
-        self.docs = mongodb.get_all_docs(date)  # [[id, "첫번째 문서 두번째 문장"],  ...]
+        self.docs = postgresDb.get_all_docs(date)  # [[id, "첫번째 문서 두번째 문장"],  ...]
 
         self.docs_word_arr = defaultdict(list) #문서별 가진 단어 배열
         #문서별 문장 list 저장 # {0: ["첫번째", "문서", "두번째", "문장", "중복", "문장"]}
@@ -40,7 +40,7 @@ class Sentence(ArrUtil):
             delete_count = int(self.line_count*0.14) if self.line_count*0.14 > 1 else 1 #제거할 줄 수
             delete_idx_arr = sum_df.sort_values(by=self.line_count, ascending=True).head(delete_count).index #제거할 줄의 idx
             for i in range(self.line_count):
-                key = "{}_doc/{}".format(self.date, idx) #collection date, _idx
+                key = "{}/{}".format(self.date, idx) #collection date, idx
                 if i not in delete_idx_arr:
                     self.docs_word_arr[key].extend(self.line_word[i])
                     

@@ -174,7 +174,7 @@ if __name__ == '__main__': # 30일 동안 50페이지*20건씩 뉴스 수집
     end_date = datetime.datetime.now()
     today = end_date - datetime.timedelta(days=1) # 하루 전날부터 실행
     
-    for i in range(30): # 50 * 30
+    for i in range(3): # 50 * 30
         target = crawl(today)
         today -= datetime.timedelta(days=1)
         
