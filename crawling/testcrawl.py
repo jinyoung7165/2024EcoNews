@@ -2,10 +2,11 @@ import datetime
 import pandas as pd
 import time
 from threading import Thread
-from multiprocessing import Manager
+from multiprocessing import Manager, Process
 from bs4 import BeautifulSoup
 import requests
 import re
+
 from psql_method import PostgresDB
 
 from dotenv import load_dotenv
@@ -53,15 +54,14 @@ def current_page_items(pageIdx, return_list): #전체페이지에서 각 기사�
         print(e)
         return False
 
-def get_news_content_thread(idx, return_list, size): # 각 기사에서 뉴스 전문 가져옴(i부터 3개씩 순회)
+def get_news_content_thread(idx, return_list, return_len): #각 기사에서 뉴스 전문 가져옴
     ths = []
-    for i in range(idx, min(idx+3, size)):
-        th = Thread(target=get_news_content, args=(i, return_list))
+    for idx_thread in range(idx, return_len, return_len//2 - 1):
+        th = Thread(target=get_news_content, args=(idx_thread, return_list))
         th.start()
         ths.append(th)
     for th in ths:
         th.join()
-                    
             
 def get_news_content(idx, return_list):
     try:
@@ -144,24 +144,36 @@ def save_in_postgres(postgresDb, return_list):
 
     postgresDb.db.commit() # 변경사항을 커밋
     cursor.close()
-    
+
+def chunks(l, n):
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
+            
 def crawl(today):
     print(today, "오늘의 crawl 시작")
     return_list = Manager().list()
 
-    for i in range(1, 51):
+    plimit = 20
+    print("process limit: ", plimit)
+    # 멀티프로세싱 
+    processes = []
+    
+    for i in range(1, 11): # 20*10 -> 200개. local 124.08130264282227
         current_page_items(i, return_list)
     
     # 각 기사에서 url 통해 본문 가져오기
-    threads = []
-    for i in range(0, len(return_list), 3): # 세 개씩
-        th = Thread(target=get_news_content_thread, args=(i, return_list, len(return_list)))
-        th.start()
-        threads.append(th)
-    
-    for th in threads:
-        th.join()
-
+    for i in range(len(return_list)//2 - 1):
+        process = Process(target=get_news_content_thread, args=(i, return_list, len(return_list)))
+        processes.append(process)
+      
+    for process_chuck in chunks(processes, plimit):
+        # 멀티프로세스 시작
+        for process in process_chuck:
+            process.start()
+        # 멀티프로세스 종료
+        for process in process_chuck:
+            process.join()
+            
     postgresDb = PostgresDB()
     convert_csv(list(return_list))
     save_in_postgres(postgresDb, return_list)
@@ -172,7 +184,7 @@ if __name__ == '__main__': # 30일 동안 50페이지*20건씩 뉴스 수집
     start = time.time()
     
     end_date = datetime.datetime.now()
-    today = end_date - datetime.timedelta(days=1) # 하루 전날부터 실행
+    today = datetime.datetime.now() # 하루 전날부터 실행
     
     for i in range(3): # 50 * 30
         target = crawl(today)
